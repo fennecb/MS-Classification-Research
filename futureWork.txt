@@ -1,0 +1,6 @@
+naive bayes
+knn
+decision tree messing
+ensemble of all classifier methods
+
+make spreadsheet where rows are model and columns are scoring metrics
