@@ -5,3 +5,6 @@ ensemble of all classifier methods
 
 make spreadsheet where rows are model and columns are scoring metrics: Overall, recall, precision, F1, and AUC
 Want recall around 75-80%
+
+Add sensitivity
+Use oversampling and bagging instead of SMOTE
