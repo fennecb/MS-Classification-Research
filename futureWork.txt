@@ -8,3 +8,5 @@ Want recall around 75-80%
 
 Add sensitivity
 Use oversampling and bagging instead of SMOTE
+
+figure out interactibility
