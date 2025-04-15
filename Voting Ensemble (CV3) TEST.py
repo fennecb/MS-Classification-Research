@@ -5,6 +5,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, roc_auc_score, confusion_matrix, auc, precision_recall_curve
 from sklearn.model_selection import GridSearchCV, KFold
 from imblearn.over_sampling import SMOTE 
@@ -119,20 +120,28 @@ param_grid_knn = {
     'kneighborsclassifier__metric': ['euclidean', 'manhattan']
 }
 
+param_grid_logreg = {
+    'logisticregression__C': [0.001, 0.1, 1, 10, 100],
+    'logisticregression__max_iter': [500, 1000]
+}
+
 # Create a pipeline including SMOTE and each classifier
 pipeline_rf = make_pipeline(SMOTE(), RandomForestClassifier())
 pipeline_xgb = make_pipeline(SMOTE(), XGBClassifier(eval_metric='logloss'))
 pipeline_knn = make_pipeline(SMOTE(), KNeighborsClassifier())
+pipeline_logreg = make_pipeline(SMOTE(), LogisticRegression())
 
 # Create GridSearchCV objects
 grid_search_rf = GridSearchCV(pipeline_rf, param_grid_rf, cv=5, scoring='roc_auc', n_jobs=-1)
 grid_search_xgb = GridSearchCV(pipeline_xgb, param_grid_xgb, cv=5, scoring='roc_auc', n_jobs=-1)
 grid_search_knn = GridSearchCV(pipeline_knn, param_grid_knn, cv=5, scoring='roc_auc', n_jobs=-1)
+grid_search_logreg = GridSearchCV(pipeline_logreg, param_grid_logreg, cv=5, scoring='roc_auc', n_jobs=-1)
 
 # Create empty Data Frames to store results of each iteration of Cross Validation
 rf_cv_results = pd.DataFrame()
 xgb_cv_results = pd.DataFrame()
 knn_cv_results = pd.DataFrame()
+logreg_cv_results = pd.DataFrame()
 voting_cv_results = pd.DataFrame()
 
 # Initialize lists to store all SHAP values across all test runs
@@ -140,10 +149,12 @@ all_shap_values_list = []
 
 # Run 10 times
 for i in range(0, 5):
+    print(f'------------------\nRun {i}\n------------------')
     # Create lists to store metrics of each fold
     rf_fold_metrics = []
     xgb_fold_metrics = []
     knn_fold_metrics = []
+    logreg_fold_metrics = []
     voting_fold_metrics = []
 
     # Initialize lists to store all Shap values and their test indices
@@ -157,49 +168,62 @@ for i in range(0, 5):
 
         # Use GridSearchCV with SMOTE to find the best parameters
         grid_search_rf.fit(X_train, y_train)
+        print("Best Random Forest Parameters:", grid_search_rf.best_params_)
         rf_classifier = grid_search_rf.best_estimator_
 
         grid_search_xgb.fit(X_train, y_train)
+        print("Best XGBoost Parameters:", grid_search_xgb.best_params_)
         xgb_classifier = grid_search_xgb.best_estimator_
 
         grid_search_knn.fit(X_train, y_train)
+        print("Best KNN Parameters:",grid_search_knn.best_params_)
         knn_classifier = grid_search_knn.best_estimator_
+
+        grid_search_logreg.fit(X_train, y_train)
+        print("Best Logistic Regression Parameters:", grid_search_logreg.best_params_)
+        logreg_classifier = grid_search_logreg.best_estimator_
         
         # Predict probabilities on the test set
         y_scores_rf = rf_classifier.predict_proba(X_test)[:, 1]
         y_scores_xgb = xgb_classifier.predict_proba(X_test)[:, 1]
         y_scores_knn = knn_classifier.predict_proba(X_test)[:, 1]
+        y_scores_logreg = logreg_classifier.predict_proba(X_test)[:, 1]
         
         # Calculate ROC curve
         fpr_rf, tpr_rf, thresholds_rf = roc_curve(y_test, y_scores_rf)
         fpr_xgb, tpr_xgb, thresholds_xgb = roc_curve(y_test, y_scores_xgb)
         fpr_knn, tpr_knn, thresholds_knn = roc_curve(y_test, y_scores_knn)
+        fpr_logreg, tpr_logreg, thresholds_logreg = roc_curve(y_test, y_scores_logreg)
         
         # Find the threshold that is closest to both specificity and recall being 70%
-        #optimal_idx_rf = np.argmin(np.abs(1 - fpr_rf - 0.7) + np.abs(tpr_rf - 0.7))
-        #optimal_threshold_rf = thresholds_rf[optimal_idx_rf]
+        optimal_idx_rf = np.argmin(np.abs(1 - fpr_rf - 0.7) + np.abs(tpr_rf - 0.7))
+        optimal_threshold_rf = thresholds_rf[optimal_idx_rf]
         
-        #optimal_idx_xgb = np.argmin(np.abs(1 - fpr_xgb - 0.7) + np.abs(tpr_xgb - 0.7))
-        #optimal_threshold_xgb = thresholds_xgb[optimal_idx_xgb]
+        optimal_idx_xgb = np.argmin(np.abs(1 - fpr_xgb - 0.7) + np.abs(tpr_xgb - 0.7))
+        optimal_threshold_xgb = thresholds_xgb[optimal_idx_xgb]
 
-        #optimal_idx_knn = np.argmin(np.abs(1 - fpr_knn - 0.7) + np.abs(tpr_knn - 0.7))
-        #optimal_threshold_knn = thresholds_knn[optimal_idx_knn]
+        optimal_idx_knn = np.argmin(np.abs(1 - fpr_knn - 0.7) + np.abs(tpr_knn - 0.7))
+        optimal_threshold_knn = thresholds_knn[optimal_idx_knn]
+
+        optimal_idx_logreg = np.argmin(np.abs(1 - fpr_logreg - 0.7) + np.abs(tpr_logreg - 0.7))
+        optimal_threshold_logreg = thresholds_logreg[optimal_idx_logreg]
         
         # 找到 Recall + Specificity 最大的索引
-        optimal_idx_rf = np.argmax(tpr_rf + (1 - fpr_rf))
-        optimal_idx_xgb = np.argmax(tpr_xgb + (1 - fpr_xgb))
-        optimal_idx_knn = np.argmax(tpr_knn + (1 - fpr_knn))
+        # optimal_idx_rf = np.argmax(tpr_rf + (1 - fpr_rf))
+        # optimal_idx_xgb = np.argmax(tpr_xgb + (1 - fpr_xgb))
+        # optimal_idx_knn = np.argmax(tpr_knn + (1 - fpr_knn))
 
-        # 获取最佳阈值
-        optimal_threshold_rf = thresholds_rf[optimal_idx_rf]
-        optimal_threshold_xgb = thresholds_xgb[optimal_idx_xgb]
-        optimal_threshold_knn = thresholds_knn[optimal_idx_knn]
+        # # 获取最佳阈值
+        # optimal_threshold_rf = thresholds_rf[optimal_idx_rf]
+        # optimal_threshold_xgb = thresholds_xgb[optimal_idx_xgb]
+        # optimal_threshold_knn = thresholds_knn[optimal_idx_knn]
 
 
         # Re-evaluate model performance using the optimal threshold
         y_pred_rf = (y_scores_rf >= optimal_threshold_rf).astype(int)
         y_pred_xgb = (y_scores_xgb >= optimal_threshold_xgb).astype(int)
         y_pred_knn = (y_scores_knn >= optimal_threshold_knn).astype(int)
+        y_pred_logreg = (y_scores_logreg >= optimal_threshold_logreg).astype(int)
         
         # Calculate evaluation metrics for RF for current fold
         accuracy_rf = accuracy_score(y_test, y_pred_rf)
@@ -287,17 +311,43 @@ for i in range(0, 5):
         # Append the dictionary to the list
         knn_fold_metrics.append(knn_metrics)
 
+        # Calculate evaluation metrics for KNN for current fold
+        accuracy_logreg = accuracy_score(y_test, y_pred_logreg)
+        precision_logreg = precision_score(y_test, y_pred_logreg)
+        recall_logreg = recall_score(y_test, y_pred_logreg)
+        f1_logreg = f1_score(y_test, y_pred_logreg)
+        auc_roc_logreg = roc_auc_score(y_test, y_pred_logreg)
+        tn, fp, fn, tp = confusion_matrix(y_test, y_pred_logreg).ravel()
+        specificity_logreg = tn / (tn + fp)
+        precision_logreg_curve, recall_logreg_curve, _ = precision_recall_curve(y_test, y_pred_logreg)
+        auprc_logreg = auc(recall_logreg_curve, precision_logreg_curve)
+
+        # Store metrics in a dictionary for the current fold
+        logreg_metrics = {
+            'Accuracy': accuracy_logreg,
+            'Specificity': specificity_logreg,
+            'Precision': precision_logreg,
+            'Recall': recall_logreg,
+            'F1 Score': f1_logreg,
+            'AUC-ROC': auc_roc_logreg,
+            'AUPRC': auprc_logreg,
+        }
+
+        # Append the dictionary to the list
+        logreg_fold_metrics.append(logreg_metrics)
+
 
     ################# Ensemble-Voting ######################
         # Define the predictions of individual classifiers (convert all 0s to 1s so weighted voted can be used)
         predictions = np.array([
             np.where(y_pred_rf == 0, -1, y_pred_rf),   
             np.where(y_pred_xgb == 0, -1, y_pred_xgb),
-            np.where(y_pred_knn == 0, -1, y_pred_knn)
+            np.where(y_pred_knn == 0, -1, y_pred_knn),
+            np.where(y_pred_logreg == 0, -1, y_pred_logreg),
         ])
 
         # Define the weights for each classifier
-        weights = np.array([2, 2, 1])  # Adjust weights based on classifier performance
+        weights = np.array([2, 2, 1, 2])  # Adjust weights based on classifier performance
 
         # Perform cross-validated predictions using the voting classifier
         y_pred_voting = voting_function(predictions, weights)
@@ -331,18 +381,21 @@ for i in range(0, 5):
     rf_fold_results = pd.DataFrame(rf_fold_metrics)
     xgb_fold_results = pd.DataFrame(xgb_fold_metrics)
     knn_fold_results = pd.DataFrame(knn_fold_metrics)
+    logreg_fold_results = pd.DataFrame(logreg_fold_metrics)
     voting_fold_results = pd.DataFrame(voting_fold_metrics)
 
     # Calculate metric means across 10 folds
     avg_rf_fold_results = rf_fold_results.mean(axis=0).to_frame().T
     avg_xgb_fold_results = xgb_fold_results.mean(axis=0).to_frame().T
     avg_knn_fold_results = knn_fold_results.mean(axis=0).to_frame().T
+    avg_logreg_fold_results = logreg_fold_results.mean(axis=0).to_frame().T
     avg_voting_fold_results = voting_fold_results.mean(axis=0).to_frame().T
 
     # Concatenate average results to CV results list
     rf_cv_results = pd.concat([rf_cv_results, avg_rf_fold_results], ignore_index=True)
     xgb_cv_results = pd.concat([xgb_cv_results, avg_xgb_fold_results], ignore_index=True)
     knn_cv_results = pd.concat([knn_cv_results, avg_knn_fold_results], ignore_index=True)
+    logreg_cv_results = pd.concat([logreg_cv_results, avg_logreg_fold_results], ignore_index=True)
     voting_cv_results = pd.concat([voting_cv_results, avg_voting_fold_results], ignore_index=True)
 
     # Initialize list to store all SHAP values from current run (samples, features, classes)
@@ -386,6 +439,16 @@ for i in range(0, 5):
     print(f"AUPRC: {avg_knn_fold_results['AUPRC'].values[0]}")
 
     # Print average results of 10 folds
+    print("\nLogistic Regression Cross Validation Results:")
+    print(f"Accuracy: {avg_logreg_fold_results['Accuracy'].values[0]}")
+    print(f"Specificity: {avg_logreg_fold_results['Specificity'].values[0]}")
+    print(f"Precision: {avg_logreg_fold_results['Precision'].values[0]}")
+    print(f"Recall: {avg_logreg_fold_results['Recall'].values[0]}")
+    print(f"F1 Score: {avg_logreg_fold_results['F1 Score'].values[0]}")
+    print(f"AUC-ROC: {avg_logreg_fold_results['AUC-ROC'].values[0]}")
+    print(f"AUPRC: {avg_logreg_fold_results['AUPRC'].values[0]}")
+
+    # Print average results of 10 folds
     print("\nVoting Ensemble Cross Validation Results:")
     print(f"Accuracy: {avg_voting_fold_results['Accuracy'].values[0]}")
     print(f"Specificity: {avg_voting_fold_results['Specificity'].values[0]}")
@@ -400,12 +463,14 @@ for i in range(0, 5):
 avg_rf_results = rf_cv_results.mean(axis=0).to_frame().T
 avg_xgb_results = xgb_cv_results.mean(axis=0).to_frame().T
 avg_knn_results = knn_cv_results.mean(axis=0).to_frame().T
+avg_logreg_results = logreg_cv_results.mean(axis=0).to_frame().T
 avg_voting_results = voting_cv_results.mean(axis=0).to_frame().T
 
 # Calculate metric stds of 10 iterations
 std_rf_results = rf_cv_results.std(axis=0).to_frame().T
 std_xgb_results = xgb_cv_results.std(axis=0).to_frame().T
 std_knn_results = knn_cv_results.std(axis=0).to_frame().T
+std_logreg_results = logreg_cv_results.std(axis=0).to_frame().T
 std_voting_results = voting_cv_results.std(axis=0).to_frame().T
 
 # Create titles for the data frames
@@ -415,6 +480,8 @@ avg_xgb_results_title = pd.DataFrame(['Average_XGB:'], columns=['Title'])
 std_xgb_results_title = pd.DataFrame(['Std_XGB:'], columns=['Title'])
 avg_knn_results_title = pd.DataFrame(['Average_KNN:'], columns=['Title'])
 std_knn_results_title = pd.DataFrame(['Std_KNN:'], columns=['Title'])
+avg_logreg_results_title = pd.DataFrame(['Average_LogReg:'], columns=['Title'])
+std_logreg_results_title = pd.DataFrame(['Std_LogReg:'], columns=['Title'])
 avg_voting_results_title = pd.DataFrame(['Average_Voting:'], columns=['Title'])
 std_voting_results_title = pd.DataFrame(['Std_Voting:'], columns=['Title'])
 
@@ -425,6 +492,8 @@ avg_xgb_results_with_title = pd.concat([avg_xgb_results_title, avg_xgb_results],
 std_xgb_results_with_title = pd.concat([std_xgb_results_title, std_xgb_results], axis=1)
 avg_knn_results_with_title = pd.concat([avg_knn_results_title, avg_knn_results], axis=1)
 std_knn_results_with_title = pd.concat([std_knn_results_title, std_knn_results], axis=1)
+avg_logreg_results_with_title = pd.concat([avg_logreg_results_title, avg_logreg_results], axis=1)
+std_logreg_results_with_title = pd.concat([std_logreg_results_title, std_logreg_results], axis=1)
 avg_voting_results_with_title = pd.concat([avg_voting_results_title, avg_voting_results], axis=1)
 std_voting_results_with_title = pd.concat([std_voting_results_title, std_voting_results], axis=1)
 
@@ -432,6 +501,7 @@ std_voting_results_with_title = pd.concat([std_voting_results_title, std_voting_
 final_results = pd.concat([avg_rf_results_with_title, std_rf_results_with_title,
                             avg_xgb_results_with_title, std_xgb_results_with_title,
                             avg_knn_results_with_title, std_knn_results_with_title,
+                            avg_logreg_results_with_title, std_logreg_results_with_title,
                             avg_voting_results_with_title, std_voting_results_with_title,    
                             ])
 
