@@ -1,0 +1,14 @@
+Model,Parameter,Value,Count,Total Folds
+Random Forest,randomforestclassifier__max_depth,5,10,10
+Random Forest,randomforestclassifier__min_samples_leaf,5,10,10
+Random Forest,randomforestclassifier__n_estimators,200,10,10
+XGBoost,xgbclassifier__colsample_bytree,0.8,10,10
+XGBoost,xgbclassifier__learning_rate,0.05,10,10
+XGBoost,xgbclassifier__max_depth,5,10,10
+XGBoost,xgbclassifier__n_estimators,100,10,10
+XGBoost,xgbclassifier__subsample,1,10,10
+KNN,kneighborsclassifier__metric,euclidean,10,10
+KNN,kneighborsclassifier__n_neighbors,9,10,10
+KNN,kneighborsclassifier__weights,uniform,10,10
+Logistic Regression,logisticregression__C,0.1,10,10
+Logistic Regression,logisticregression__max_iter,1000,10,10

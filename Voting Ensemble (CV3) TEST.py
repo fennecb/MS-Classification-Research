@@ -6,12 +6,14 @@ from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, roc_auc_score, confusion_matrix, auc, precision_recall_curve
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, roc_auc_score, confusion_matrix, auc, precision_recall_curve, RocCurveDisplay
 from sklearn.model_selection import GridSearchCV, KFold
 from imblearn.over_sampling import SMOTE 
 from imblearn.pipeline import make_pipeline
 import shap
 import matplotlib.pyplot as plt
+
+os.makedirs('roc_plots', exist_ok=True)
 
 # Disable output warnings
 pd.set_option('mode.chained_assignment', None)
@@ -162,7 +164,7 @@ for i in range(0, 5):
     test_indices_list = []
 
     # Perform 10-fold cross-validation
-    for train_index, test_index in KFold(n_splits=10, shuffle=True).split(X, y):
+    for k, (train_index, test_index) in enumerate(KFold(n_splits=10, shuffle=True).split(X, y)):
         X_train, X_test = X.iloc[train_index], X.iloc[test_index]
         y_train, y_test = y.iloc[train_index], y.iloc[test_index]
 
@@ -194,18 +196,36 @@ for i in range(0, 5):
         fpr_xgb, tpr_xgb, thresholds_xgb = roc_curve(y_test, y_scores_xgb)
         fpr_knn, tpr_knn, thresholds_knn = roc_curve(y_test, y_scores_knn)
         fpr_logreg, tpr_logreg, thresholds_logreg = roc_curve(y_test, y_scores_logreg)
+
+        # Display ROC AUC plot
+        fig, ax = plt.subplots(figsize=(10, 8))
+        rf_roc_plot = RocCurveDisplay.from_estimator(rf_classifier, X_test, y_test, name='Random Forest', ax=ax)
+        xgb_roc_plot = RocCurveDisplay.from_estimator(xgb_classifier, X_test, y_test, name='XGBoost', ax=ax)
+        knn_roc_plot = RocCurveDisplay.from_estimator(knn_classifier, X_test, y_test, name='KNN', ax=ax)
+        logreg_roc_plot = RocCurveDisplay.from_estimator(logreg_classifier, X_test, y_test, name='Logistic Regression', ax=ax)
+        ax.set_title('ROC Curves for Multiple Classifiers')
+        ax.grid(linestyle='--')
+        plt.legend(loc='lower right')
+        plt.tight_layout()
+        ax.set_title(f'ROC Curves for Multiple Classifiers - Set {i} Fold {k}')
+        ax.grid(linestyle='--')
+        plt.legend(loc='lower right')
+        plt.tight_layout()
+        plt.savefig(os.path.join('roc_plots', f'roc_comparison_set{i}_fold{k}.png'), dpi=300, bbox_inches='tight')
+        plt.close(fig)
         
+
         # Find the threshold that is closest to both specificity and recall being 70%
-        optimal_idx_rf = np.argmin(np.abs(1 - fpr_rf - 0.7) + np.abs(tpr_rf - 0.7))
+        optimal_idx_rf = np.argmin(np.abs(tpr_rf - 0.7))
         optimal_threshold_rf = thresholds_rf[optimal_idx_rf]
         
-        optimal_idx_xgb = np.argmin(np.abs(1 - fpr_xgb - 0.7) + np.abs(tpr_xgb - 0.7))
+        optimal_idx_xgb = np.argmin(np.abs(tpr_xgb - 0.7))
         optimal_threshold_xgb = thresholds_xgb[optimal_idx_xgb]
 
-        optimal_idx_knn = np.argmin(np.abs(1 - fpr_knn - 0.7) + np.abs(tpr_knn - 0.7))
+        optimal_idx_knn = np.argmin(np.abs(tpr_knn - 0.7))
         optimal_threshold_knn = thresholds_knn[optimal_idx_knn]
 
-        optimal_idx_logreg = np.argmin(np.abs(1 - fpr_logreg - 0.7) + np.abs(tpr_logreg - 0.7))
+        optimal_idx_logreg = np.argmin(np.abs(tpr_logreg - 0.7))
         optimal_threshold_logreg = thresholds_logreg[optimal_idx_logreg]
         
         # 找到 Recall + Specificity 最大的索引
@@ -234,7 +254,8 @@ for i in range(0, 5):
         tn, fp, fn, tp = confusion_matrix(y_test, y_pred_rf).ravel()
         specificity_rf = tn / (tn + fp)
         precision_rf_curve, recall_rf_curve, _ = precision_recall_curve(y_test, y_pred_rf)
-        auprc_rf = auc(recall_rf_curve, precision_rf_curve)
+        tpr, fpr, thresholds = roc_curve(y_test, y_pred_rf)
+        auprc_rf = auc(fpr, tpr)
 
         # Store metrics in a dictionary for the current fold
         rf_metrics = {
@@ -270,7 +291,8 @@ for i in range(0, 5):
         tn, fp, fn, tp = confusion_matrix(y_test, y_pred_xgb).ravel()
         specificity_xgb = tn / (tn + fp)
         precision_xgb_curve, recall_xgb_curve, _ = precision_recall_curve(y_test, y_pred_xgb)
-        auprc_xgb = auc(recall_xgb_curve, precision_xgb_curve)
+        tpr, fpr, thresholds = roc_curve(y_test, y_pred_xgb)
+        auprc_xgb = auc(fpr, tpr)
 
         # Store metrics in a dictionary for the current fold
         xgb_metrics = {
@@ -295,7 +317,8 @@ for i in range(0, 5):
         tn, fp, fn, tp = confusion_matrix(y_test, y_pred_knn).ravel()
         specificity_knn = tn / (tn + fp)
         precision_knn_curve, recall_knn_curve, _ = precision_recall_curve(y_test, y_pred_knn)
-        auprc_knn = auc(recall_knn_curve, precision_knn_curve)
+        tpr, fpr, thresholds = roc_curve(y_test, y_pred_knn)
+        auprc_knn = auc(fpr, tpr)
 
         # Store metrics in a dictionary for the current fold
         knn_metrics = {
@@ -320,7 +343,8 @@ for i in range(0, 5):
         tn, fp, fn, tp = confusion_matrix(y_test, y_pred_logreg).ravel()
         specificity_logreg = tn / (tn + fp)
         precision_logreg_curve, recall_logreg_curve, _ = precision_recall_curve(y_test, y_pred_logreg)
-        auprc_logreg = auc(recall_logreg_curve, precision_logreg_curve)
+        tpr, fpr, thresholds = roc_curve(y_test, y_pred_logreg)
+        auprc_logreg = auc(fpr, tpr)
 
         # Store metrics in a dictionary for the current fold
         logreg_metrics = {
@@ -336,9 +360,8 @@ for i in range(0, 5):
         # Append the dictionary to the list
         logreg_fold_metrics.append(logreg_metrics)
 
-
-    ################# Ensemble-Voting ######################
-        # Define the predictions of individual classifiers (convert all 0s to 1s so weighted voted can be used)
+        ################# Ensemble-Voting ######################
+        # Define the predictions of individual classifiers (convert all 0s to -1s so weighted voted can be used)
         predictions = np.array([
             np.where(y_pred_rf == 0, -1, y_pred_rf),   
             np.where(y_pred_xgb == 0, -1, y_pred_xgb),
@@ -361,7 +384,8 @@ for i in range(0, 5):
         tn, fp, fn, tp = confusion_matrix(y_test, y_pred_voting).ravel()
         specificity_voting = tn / (tn + fp)
         precision_voting_curve, recall_voting_curve, _ = precision_recall_curve(y_test, y_pred_voting)
-        auprc_voting = auc(recall_voting_curve, precision_voting_curve)
+        tpr, fpr, thresholds = roc_curve(y_test, y_pred_voting)
+        auprc_voting = auc(fpr, tpr)
 
         # Store metrics in a dictionary for the current fold
         voting_metrics = {
